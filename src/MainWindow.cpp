@@ -1,8 +1,10 @@
 ﻿#include "MainWindow.h"
 #include <QHBoxLayout>
 #include <QVBoxLayout>
+#include <QGridLayout>
 #include <QFormLayout>
 #include <QFrame>
+#include <QGroupBox>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QGraphicsPixmapItem>
@@ -75,6 +77,8 @@ void MainWindow::loadSettings()
 {
     QSettings s("TransactionPhotoPro","TransactionPhotoPro");
     paper->setCurrentIndex(s.value("paper",0).toInt());
+    photoSize->setCurrentIndex(s.value("photoSize",0).toInt());
+    autoLayout->setChecked(s.value("autoLayout",true).toBool());
     columns->setValue(s.value("columns",2).toInt());
     rows->setValue(s.value("rows",2).toInt());
     quality->setCurrentIndex(s.value("quality",1).toInt());
@@ -92,6 +96,8 @@ void MainWindow::saveSettings()
 {
     QSettings s("TransactionPhotoPro","TransactionPhotoPro");
     s.setValue("paper",paper->currentIndex());
+    s.setValue("photoSize",photoSize->currentIndex());
+    s.setValue("autoLayout",autoLayout->isChecked());
     s.setValue("columns",columns->value());
     s.setValue("rows",rows->value());
     s.setValue("quality",quality->currentIndex());
@@ -115,9 +121,9 @@ void MainWindow::buildUi()
 
     auto *side = new QFrame;
     side->setObjectName("side");
-    side->setMinimumWidth(365);
+    side->setMinimumWidth(390);
     auto *s = new QVBoxLayout(side);
-    s->setSpacing(8);
+    s->setSpacing(10);
 
     auto *title = new QLabel("معاملات Photo Pro");
     title->setObjectName("title");
@@ -138,8 +144,15 @@ void MainWindow::buildUi()
     connect(folder,&QPushButton::clicked,this,&MainWindow::addFolder);
     connect(del,&QPushButton::clicked,this,&MainWindow::removeSelected);
     connect(clear,&QPushButton::clicked,this,&MainWindow::clearPhotos);
-    s->addWidget(add); s->addWidget(folder);
-    s->addWidget(del); s->addWidget(clear);
+    auto *photoActions = new QGroupBox("إدارة الصور");
+    auto *photoActionLayout = new QGridLayout(photoActions);
+    photoActionLayout->setHorizontalSpacing(8);
+    photoActionLayout->setVerticalSpacing(8);
+    photoActionLayout->addWidget(add, 0, 0);
+    photoActionLayout->addWidget(folder, 0, 1);
+    photoActionLayout->addWidget(del, 1, 0);
+    photoActionLayout->addWidget(clear, 1, 1);
+    s->addWidget(photoActions);
 
     list = new QListWidget;
     list->setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -163,12 +176,20 @@ void MainWindow::buildUi()
     connect(down,&QPushButton::clicked,this,&MainWindow::moveSelectedDown);
     connect(autoNum,&QPushButton::clicked,this,&MainWindow::autoNumberNames);
     moveRow->addWidget(up); moveRow->addWidget(down);
-    s->addLayout(moveRow);
-    s->addWidget(autoNum);
+    auto *orderingGroup = new QGroupBox("ترتيب الصور");
+    auto *orderingLayout = new QVBoxLayout(orderingGroup);
+    orderingLayout->addLayout(moveRow);
+    orderingLayout->addWidget(autoNum);
+    s->addWidget(orderingGroup);
 
-    auto *form = new QFormLayout;
+    auto *paperGroup = new QGroupBox("حجم الورق والتخطيط التلقائي");
+    auto *form = new QFormLayout(paperGroup);
     paper = new QComboBox;
     paper->addItems({"A4 رأسي","A4 أفقي","A5 رأسي","A5 أفقي"});
+    photoSize = new QComboBox;
+    photoSize->addItems({"4 × 6 سم","3 × 4 سم","5 × 7 سم","3.5 × 4.5 سم"});
+    autoLayout = new QCheckBox("تخطيط تلقائي (أفضل عدد ممكن)");
+    autoLayout->setChecked(true);
     columns = new QSpinBox; columns->setRange(1,8); columns->setValue(2);
     rows = new QSpinBox; rows->setRange(1,12); rows->setValue(2);
     quality = new QComboBox;
@@ -189,19 +210,29 @@ void MainWindow::buildUi()
     margin = new QDoubleSpinBox; margin->setRange(2,30); margin->setValue(8); margin->setSuffix(" مم");
     gap = new QDoubleSpinBox; gap->setRange(1,25); gap->setValue(4); gap->setSuffix(" مم");
     form->addRow("الورق:",paper);
-    form->addRow("الأعمدة:",columns);
-    form->addRow("الصفوف:",rows);
-    form->addRow("التحسين:",quality);
-    form->addRow("",removeBg);
-    form->addRow("حساسية الإزالة:",bgTolerance);
-    form->addRow("نعومة الحواف:",bgFeather);
-    form->addRow("",whiteBg);
-    form->addRow("",showNames);
-    form->addRow("الاسم:",nameEdit);
-    form->addRow("حجم الاسم:",fontSize);
+    form->addRow("مقاس الصورة:",photoSize);
+    form->addRow("",autoLayout);
+    form->addRow("الأعمدة اليدوية:",columns);
+    form->addRow("الصفوف اليدوية:",rows);
+    layoutStatus = new QLabel;
+    layoutStatus->setObjectName("layoutStatus");
+    layoutStatus->setWordWrap(true);
+    form->addRow("النتيجة:",layoutStatus);
     form->addRow("الهامش:",margin);
     form->addRow("المسافة:",gap);
-    s->addLayout(form);
+    s->addWidget(paperGroup);
+
+    auto *processingGroup = new QGroupBox("تحسين الصور");
+    auto *processingForm = new QFormLayout(processingGroup);
+    processingForm->addRow("التحسين:",quality);
+    processingForm->addRow("",removeBg);
+    processingForm->addRow("حساسية الإزالة:",bgTolerance);
+    processingForm->addRow("نعومة الحواف:",bgFeather);
+    processingForm->addRow("",whiteBg);
+    processingForm->addRow("",showNames);
+    processingForm->addRow("الاسم:",nameEdit);
+    processingForm->addRow("حجم الاسم:",fontSize);
+    s->addWidget(processingGroup);
 
     auto *process = new QPushButton("تحسين ومعالجة الكل");
     process->setObjectName("primary");
@@ -209,7 +240,10 @@ void MainWindow::buildUi()
     reset->setObjectName("danger");
     connect(process,&QPushButton::clicked,this,&MainWindow::processAll);
     connect(reset,&QPushButton::clicked,this,&MainWindow::resetProcessing);
-    s->addWidget(process); s->addWidget(reset);
+    auto *processingButtons = new QHBoxLayout;
+    processingButtons->addWidget(process);
+    processingButtons->addWidget(reset);
+    s->addLayout(processingButtons);
 
     auto *pdf = new QPushButton("حفظ PDF");
     pdf->setObjectName("secondary");
@@ -220,7 +254,12 @@ void MainWindow::buildUi()
     connect(pdf,&QPushButton::clicked,this,&MainWindow::savePdf);
     connect(print,&QPushButton::clicked,this,&MainWindow::printPage);
     connect(imgs,&QPushButton::clicked,this,&MainWindow::saveImages);
-    s->addWidget(pdf); s->addWidget(print); s->addWidget(imgs);
+    auto *outputGroup = new QGroupBox("الإخراج");
+    auto *outputButtons = new QVBoxLayout(outputGroup);
+    outputButtons->addWidget(pdf);
+    outputButtons->addWidget(print);
+    outputButtons->addWidget(imgs);
+    s->addWidget(outputGroup);
 
     progress = new QProgressBar;
     progress->setRange(0,100);
@@ -248,12 +287,20 @@ void MainWindow::buildUi()
 
     auto changed = [this](){ updatePreview(); };
     connect(paper,&QComboBox::currentIndexChanged,this,changed);
+    connect(photoSize,&QComboBox::currentIndexChanged,this,changed);
+    connect(autoLayout,&QCheckBox::toggled,this,[this](bool enabled){
+        columns->setEnabled(!enabled);
+        rows->setEnabled(!enabled);
+        updatePreview();
+    });
     connect(columns,qOverload<int>(&QSpinBox::valueChanged),this,changed);
     connect(rows,qOverload<int>(&QSpinBox::valueChanged),this,changed);
     connect(showNames,&QCheckBox::toggled,this,changed);
     connect(fontSize,qOverload<int>(&QSpinBox::valueChanged),this,changed);
     connect(margin,qOverload<double>(&QDoubleSpinBox::valueChanged),this,changed);
     connect(gap,qOverload<double>(&QDoubleSpinBox::valueChanged),this,changed);
+    columns->setEnabled(false);
+    rows->setEnabled(false);
     connect(nameEdit,&QLineEdit::textChanged,this,[this](const QString &v){
         int r=list->currentRow();
         if(r>=0 && r<(int)photos.size()) {
@@ -276,6 +323,9 @@ void MainWindow::buildUi()
         QLabel#listTitle{color:#172033;font-size:15px;font-weight:700;padding:6px 2px;}
         QLabel#head{color:#172033;font-size:22px;font-weight:700;padding:5px 0 8px;}
         QLabel#status{background:#f8fafc;color:#172033;border:1px solid #c4cedd;border-radius:9px;padding:10px 12px;font-weight:700;}
+        QLabel#layoutStatus{background:#edf5ff;color:#164b9b;border:1px solid #a9c8f5;border-radius:8px;padding:7px;font-weight:700;}
+        QGroupBox{border:1px solid #c4cedd;border-radius:10px;margin-top:9px;padding:12px 10px 10px;font-weight:700;color:#26364f;}
+        QGroupBox::title{subcontrol-origin:margin;right:10px;padding:0 5px;background:#f9fbff;}
         QPushButton{background:#ffffff;color:#172033;border:1px solid #b9c4d3;border-radius:10px;min-height:42px;padding:10px 14px;font-weight:700;font-size:14px;}
         QPushButton:hover{background:#edf5ff;border-color:#7ca9f5;}
         QPushButton:pressed{background:#dfeeff;border-color:#5f8ee8;}
@@ -528,6 +578,41 @@ QSize MainWindow::paperPixels() const
     return s;
 }
 
+QSizeF MainWindow::selectedPhotoSize() const
+{
+    switch(photoSize->currentIndex()){
+    case 1: return QSizeF(3.0,4.0);
+    case 2: return QSizeF(5.0,7.0);
+    case 3: return QSizeF(3.5,4.5);
+    default: return QSizeF(4.0,6.0);
+    }
+}
+
+MainWindow::LayoutInfo MainWindow::calculateLayout() const
+{
+    const bool a4=paper->currentIndex()<2;
+    const bool landscape=paper->currentIndex()%2==1;
+    const QSizeF paperCm=a4?QSizeF(21.0,29.7):QSizeF(14.8,21.0);
+    const QSizeF pageCm=landscape?QSizeF(paperCm.height(),paperCm.width()):paperCm;
+    const double m=margin->value()/10.0, g=gap->value()/10.0;
+    const QSizeF requested=selectedPhotoSize();
+    LayoutInfo best;
+    best.photoCm=requested;
+    auto tryLayout=[&](double w,double h,bool rotated){
+        const double usableW=pageCm.width()-2*m, usableH=pageCm.height()-2*m;
+        const int c=qMax(0,int(qFloor((usableW+g)/(w+g))));
+        const int r=qMax(0,int(qFloor((usableH+g)/(h+g))));
+        if(c*r > best.columns*best.rows){
+            best.columns=c; best.rows=r; best.rotated=rotated;
+            best.photoCm=QSizeF(w,h);
+        }
+    };
+    tryLayout(requested.width(),requested.height(),false);
+    if(!qFuzzyCompare(requested.width(),requested.height()))
+        tryLayout(requested.height(),requested.width(),true);
+    return best;
+}
+
 void MainWindow::rebuildPage(QPainter *external,const QRectF &target)
 {
     QSize ps=paperPixels();
@@ -535,27 +620,43 @@ void MainWindow::rebuildPage(QPainter *external,const QRectF &target)
     QPainter p(&page);
     p.setRenderHint(QPainter::Antialiasing);
     p.setRenderHint(QPainter::SmoothPixmapTransform);
-    double m=margin->value()/25.4*300.0, g=gap->value()/25.4*300.0;
-    int c=columns->value(), r=rows->value();
-    double cw=(ps.width()-2*m-(c-1)*g)/c;
-    double ch=(ps.height()-2*m-(r-1)*g)/r;
+    const LayoutInfo layout=autoLayout->isChecked()?calculateLayout():LayoutInfo{
+        columns->value(), rows->value(), false, selectedPhotoSize()
+    };
+    const double scale=300.0/2.54;
+    const double m=margin->value()/25.4*300.0, g=gap->value()/25.4*300.0;
+    const bool automatic=autoLayout->isChecked();
+    const double pw=layout.photoCm.width()*scale, ph=layout.photoCm.height()*scale;
+    const int c=layout.columns, r=layout.rows;
+    const double cw=automatic?pw:(ps.width()-2*m-(c-1)*g)/qMax(1,c);
+    const double ch=automatic?ph:(ps.height()-2*m-(r-1)*g)/qMax(1,r);
     int per=c*r;
     for(int i=0;i<std::min(per,(int)photos.size());++i){
         int rr=i/c, cc=i%c;
         double x=ps.width()-m-(cc+1)*cw-cc*g; // RTL
         double y=m+rr*(ch+g);
-        double nh=showNames->isChecked()?fontSize->value()*300.0/72.0*1.8:0;
-        QRectF ib(x+8,y+8,cw-16,ch-nh-12);
+        QRectF photoRect(x,y,cw,ch);
         QImage im=photos[i].processed;
         if(im.isNull()) im=photos[i].original;
-        QImage fit=im.scaled(ib.size().toSize(),Qt::KeepAspectRatio,Qt::SmoothTransformation);
-        QRectF ir(x+(cw-fit.width())/2,y+(ch-nh-fit.height())/2,fit.width(),fit.height());
+        QImage fit=im.scaled(photoRect.size().toSize(),Qt::KeepAspectRatio,Qt::SmoothTransformation);
+        QRectF ir(photoRect.x()+(photoRect.width()-fit.width())/2,
+                  photoRect.y()+(photoRect.height()-fit.height())/2,
+                  fit.width(),fit.height());
         p.drawImage(ir,fit);
-        p.setPen(QPen(QColor("#d5d9e0"),2)); p.drawRect(QRectF(x,y,cw,ch));
+        // Dashed cutting guides follow the physical photo rectangle, not the image content.
+        p.save();
+        QPen cutPen(QColor("#8b95a3"), 2, Qt::DashLine);
+        cutPen.setDashPattern({7.0, 5.0});
+        p.setPen(cutPen);
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(photoRect);
+        p.restore();
         if(showNames->isChecked()){
             QFont f("Arial"); f.setBold(true); f.setPixelSize(fontSize->value()*300/72);
             p.setFont(f); p.setPen(Qt::black);
-            p.drawText(QRectF(x+5,y+ch-nh,cw-10,nh),Qt::AlignCenter|Qt::TextWordWrap,photos[i].name);
+            const QRectF labelRect=photoRect.adjusted(3,photoRect.height()-f.pixelSize()-8,-3,-3);
+            p.fillRect(labelRect,QColor(255,255,255,205));
+            p.drawText(labelRect,Qt::AlignCenter|Qt::TextWordWrap,photos[i].name);
         }
     }
     p.end();
@@ -571,7 +672,22 @@ void MainWindow::rebuildPage(QPainter *external,const QRectF &target)
     }
 }
 
-void MainWindow::updatePreview(){ rebuildPage(); }
+void MainWindow::updatePreview()
+{
+    const LayoutInfo layout=calculateLayout();
+    const QString paperName=paper->currentText();
+    const QString sizeName=photoSize->currentText();
+    if(autoLayout->isChecked()){
+        layoutStatus->setText(QString("%1: %2 × %3 = %4 صور مقاس %5%6")
+                              .arg(paperName).arg(layout.columns).arg(layout.rows)
+                              .arg(layout.columns*layout.rows).arg(sizeName)
+                              .arg(layout.rotated?" (مدوّر)":""));
+    } else {
+        layoutStatus->setText(QString("يدوي: %1 × %2 خلايا — المقاس الفعلي %3")
+                              .arg(columns->value()).arg(rows->value()).arg(sizeName));
+    }
+    rebuildPage();
+}
 
 void MainWindow::savePdf()
 {
@@ -618,4 +734,3 @@ void MainWindow::saveImages()
     }
     status->setText(QString("تم حفظ %1 صورة").arg(n));
 }
-

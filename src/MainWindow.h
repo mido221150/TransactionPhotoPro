@@ -13,6 +13,7 @@
 #include <QProgressBar>
 #include <QImage>
 #include <QPrinter>
+#include <QSizeF>
 #include <vector>
 
 struct PhotoItem {
@@ -47,6 +48,14 @@ private:
     void buildUi();
     void addImageFile(const QString &f);
     void rebuildPage(QPainter *external=nullptr, const QRectF &target=QRectF());
+    struct LayoutInfo {
+        int columns{0};
+        int rows{0};
+        bool rotated{false};
+        QSizeF photoCm;
+    };
+    LayoutInfo calculateLayout() const;
+    QSizeF selectedPhotoSize() const;
     QImage processImage(const QImage &in) const;
     QImage sharpen(const QImage &in, int amount) const;
     QImage removeLightBackground(const QImage &in) const;
@@ -57,12 +66,12 @@ private:
     QListWidget *list{};
     QGraphicsView *view{};
     QGraphicsScene *scene{};
-    QComboBox *paper{}, *quality{};
+    QComboBox *paper{}, *photoSize{}, *quality{};
     QSpinBox *columns{}, *rows{}, *fontSize{};
     QSpinBox *bgTolerance{}, *bgFeather{};
-    QCheckBox *removeBg{}, *whiteBg{}, *showNames{};
+    QCheckBox *autoLayout{}, *removeBg{}, *whiteBg{}, *showNames{};
     QLineEdit *nameEdit{};
     QDoubleSpinBox *margin{}, *gap{};
     QProgressBar *progress{};
-    QLabel *status{};
+    QLabel *status{}, *layoutStatus{};
 };
