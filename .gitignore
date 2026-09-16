@@ -1,0 +1,7 @@
+build/
+dist/TransactionPhotoPro/
+*.user
+*.user.*
+.vs/
+.vscode/
+
