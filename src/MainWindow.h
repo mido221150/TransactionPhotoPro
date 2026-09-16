@@ -52,11 +52,12 @@ private:
     struct LayoutInfo {
         int columns{0};
         int rows{0};
-        bool rotated{false};
         QSizeF photoCm;
+        bool landscape{false};
     };
     LayoutInfo calculateLayout() const;
     QSizeF selectedPhotoSize() const;
+    QSizeF paperSizeMm() const;
     QImage processImage(const QImage &in) const;
     QImage sharpen(const QImage &in, int amount) const;
     QImage removeLightBackground(const QImage &in) const;
@@ -68,9 +69,9 @@ private:
     QGraphicsView *view{};
     QGraphicsScene *scene{};
     QComboBox *paper{}, *quality{};
-    QSpinBox *columns{}, *rows{}, *fontSize{};
+    QSpinBox *fontSize{};
     QSpinBox *bgTolerance{}, *bgFeather{};
-    QCheckBox *autoLayout{}, *removeBg{}, *whiteBg{}, *showNames{};
+    QCheckBox *removeBg{}, *whiteBg{}, *showNames{};
     QLineEdit *nameEdit{};
     QDoubleSpinBox *margin{}, *gap{};
     QProgressBar *progress{};

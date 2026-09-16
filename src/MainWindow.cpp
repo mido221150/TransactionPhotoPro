@@ -84,10 +84,7 @@ void MainWindow::dropEvent(QDropEvent *event)
 void MainWindow::loadSettings()
 {
     QSettings s("TransactionPhotoPro","TransactionPhotoPro");
-    paper->setCurrentIndex(s.value("paper",0).toInt());
-    autoLayout->setChecked(s.value("autoLayout",true).toBool());
-    columns->setValue(s.value("columns",2).toInt());
-    rows->setValue(s.value("rows",2).toInt());
+    paper->setCurrentIndex(qBound(0,s.value("paper",0).toInt(),3));
     quality->setCurrentIndex(s.value("quality",1).toInt());
     removeBg->setChecked(s.value("removeBg",true).toBool());
     whiteBg->setChecked(s.value("whiteBg",true).toBool());
@@ -103,9 +100,6 @@ void MainWindow::saveSettings()
 {
     QSettings s("TransactionPhotoPro","TransactionPhotoPro");
     s.setValue("paper",paper->currentIndex());
-    s.setValue("autoLayout",autoLayout->isChecked());
-    s.setValue("columns",columns->value());
-    s.setValue("rows",rows->value());
     s.setValue("quality",quality->currentIndex());
     s.setValue("removeBg",removeBg->isChecked());
     s.setValue("whiteBg",whiteBg->isChecked());
@@ -191,15 +185,11 @@ void MainWindow::buildUi()
     auto *paperGroup = new QGroupBox("حجم الورق والتخطيط التلقائي");
     auto *form = new QFormLayout(paperGroup);
     paper = new QComboBox;
-    paper->addItems({"A4 رأسي","A4 أفقي","A5 رأسي","A5 أفقي"});
+    paper->addItems({"A4","A5","10 × 15 سم","Letter"});
     photoSizeLabel = new QLabel("4 × 6 سم");
     photoSizeLabel->setObjectName("fixedPhotoSize");
     photoSizeLabel->setAlignment(Qt::AlignCenter);
     photoSizeLabel->setToolTip("مقاس الصور ثابت في هذا الإصدار");
-    autoLayout = new QCheckBox("تخطيط تلقائي (أفضل عدد ممكن)");
-    autoLayout->setChecked(true);
-    columns = new QSpinBox; columns->setRange(1,8); columns->setValue(2);
-    rows = new QSpinBox; rows->setRange(1,12); rows->setValue(2);
     quality = new QComboBox;
     quality->addItems({"تحسين خفيف","تحسين متوسط","تحسين قوي"});
     removeBg = new QCheckBox("إزالة الخلفية البيضاء/الفاتحة");
@@ -219,9 +209,9 @@ void MainWindow::buildUi()
     gap = new QDoubleSpinBox; gap->setRange(1,25); gap->setValue(4); gap->setSuffix(" مم");
     form->addRow("الورق:",paper);
     form->addRow("مقاس الصورة الثابت:",photoSizeLabel);
-    form->addRow("",autoLayout);
-    form->addRow("الأعمدة اليدوية:",columns);
-    form->addRow("الصفوف اليدوية:",rows);
+    auto *autoLayoutLabel = new QLabel("تخطيط تلقائي: اتجاه الورق الأفضل وعدد الخانات");
+    autoLayoutLabel->setObjectName("autoLayoutLabel");
+    form->addRow("",autoLayoutLabel);
     layoutStatus = new QLabel;
     layoutStatus->setObjectName("layoutStatus");
     layoutStatus->setWordWrap(true);
@@ -317,19 +307,10 @@ void MainWindow::buildUi()
 
     auto changed = [this](){ updatePreview(); };
     connect(paper,&QComboBox::currentIndexChanged,this,changed);
-    connect(autoLayout,&QCheckBox::toggled,this,[this](bool enabled){
-        columns->setEnabled(!enabled);
-        rows->setEnabled(!enabled);
-        updatePreview();
-    });
-    connect(columns,qOverload<int>(&QSpinBox::valueChanged),this,changed);
-    connect(rows,qOverload<int>(&QSpinBox::valueChanged),this,changed);
     connect(showNames,&QCheckBox::toggled,this,changed);
     connect(fontSize,qOverload<int>(&QSpinBox::valueChanged),this,changed);
     connect(margin,qOverload<double>(&QDoubleSpinBox::valueChanged),this,changed);
     connect(gap,qOverload<double>(&QDoubleSpinBox::valueChanged),this,changed);
-    columns->setEnabled(false);
-    rows->setEnabled(false);
     connect(nameEdit,&QLineEdit::textChanged,this,[this](const QString &v){
         int r=list->currentRow();
         if(r>=0 && r<(int)photos.size()) {
@@ -604,10 +585,10 @@ void MainWindow::resetProcessing()
 
 QSize MainWindow::paperPixels() const
 {
-    bool a4=paper->currentIndex()<2;
-    bool landscape=paper->currentIndex()%2==1;
-    QSize s=a4?QSize(2480,3508):QSize(1748,2480); // 300 DPI تقريبًا
-    if(landscape) s.transpose();
+    const QSizeF mm=paperSizeMm();
+    const LayoutInfo layout=calculateLayout();
+    QSize s(qRound(mm.width()/25.4*300.0),qRound(mm.height()/25.4*300.0));
+    if(layout.landscape) s.transpose();
     return s;
 }
 
@@ -616,28 +597,35 @@ QSizeF MainWindow::selectedPhotoSize() const
     return QSizeF(4.0,6.0);
 }
 
+QSizeF MainWindow::paperSizeMm() const
+{
+    switch(paper->currentIndex()){
+    case 1: return QSizeF(148.0,210.0);
+    case 2: return QSizeF(100.0,150.0);
+    case 3: return QSizeF(215.9,279.4);
+    default: return QSizeF(210.0,297.0);
+    }
+}
+
 MainWindow::LayoutInfo MainWindow::calculateLayout() const
 {
-    const bool a4=paper->currentIndex()<2;
-    const bool landscape=paper->currentIndex()%2==1;
-    const QSizeF paperCm=a4?QSizeF(21.0,29.7):QSizeF(14.8,21.0);
-    const QSizeF pageCm=landscape?QSizeF(paperCm.height(),paperCm.width()):paperCm;
+    const QSizeF paperMm=paperSizeMm();
+    const QSizeF portraitCm=QSizeF(paperMm.width()/10.0,paperMm.height()/10.0);
     const double m=margin->value()/10.0, g=gap->value()/10.0;
     const QSizeF requested=selectedPhotoSize();
-    LayoutInfo best;
-    best.photoCm=requested;
-    auto tryLayout=[&](double w,double h,bool rotated){
-        const double usableW=pageCm.width()-2*m, usableH=pageCm.height()-2*m;
-        const int c=qMax(0,int(qFloor((usableW+g)/(w+g))));
-        const int r=qMax(0,int(qFloor((usableH+g)/(h+g))));
-        if(c*r > best.columns*best.rows){
-            best.columns=c; best.rows=r; best.rotated=rotated;
-            best.photoCm=QSizeF(w,h);
-        }
+    auto count=[&](const QSizeF &page){
+        return qMakePair(qMax(0,int(qFloor((page.width()-2*m+g)/(requested.width()+g)))),
+                         qMax(0,int(qFloor((page.height()-2*m+g)/(requested.height()+g)))));
     };
-    tryLayout(requested.width(),requested.height(),false);
-    if(!qFuzzyCompare(requested.width(),requested.height()))
-        tryLayout(requested.height(),requested.width(),true);
+    const auto portrait=count(portraitCm);
+    const auto landscape=count(QSizeF(portraitCm.height(),portraitCm.width()));
+    const bool useLandscape=landscape.first*landscape.second > portrait.first*portrait.second;
+    const auto chosen=useLandscape?landscape:portrait;
+    LayoutInfo best;
+    best.columns=chosen.first;
+    best.rows=chosen.second;
+    best.photoCm=requested;
+    best.landscape=useLandscape;
     return best;
 }
 
@@ -648,16 +636,13 @@ void MainWindow::rebuildPage(QPainter *external,const QRectF &target)
     QPainter p(&page);
     p.setRenderHint(QPainter::Antialiasing);
     p.setRenderHint(QPainter::SmoothPixmapTransform);
-    const LayoutInfo layout=autoLayout->isChecked()?calculateLayout():LayoutInfo{
-        columns->value(), rows->value(), false, selectedPhotoSize()
-    };
+    const LayoutInfo layout=calculateLayout();
     const double scale=300.0/2.54;
     const double m=margin->value()/25.4*300.0, g=gap->value()/25.4*300.0;
-    const bool automatic=autoLayout->isChecked();
     const double pw=layout.photoCm.width()*scale, ph=layout.photoCm.height()*scale;
     const int c=layout.columns, r=layout.rows;
-    const double cw=automatic?pw:(ps.width()-2*m-(c-1)*g)/qMax(1,c);
-    const double ch=automatic?ph:(ps.height()-2*m-(r-1)*g)/qMax(1,r);
+    const double cw=pw;
+    const double ch=ph;
     const int per=c*r;
     const int slotCount=photos.empty()?0:per;
     for(int i=0;i<slotCount;++i){
@@ -707,25 +692,15 @@ void MainWindow::updatePreview()
     const LayoutInfo layout=calculateLayout();
     const QString paperName=paper->currentText();
     const QString sizeName="4 × 6 سم";
-    if(autoLayout->isChecked()){
-        const int totalSlots=layout.columns*layout.rows;
-        const int repeats=photos.empty()?0:qMax(0,totalSlots-static_cast<int>(photos.size()));
-        layoutStatus->setText(QString("%1: %2 × %3 = %4 صور مقاس %5%6")
-                              .arg(paperName).arg(layout.columns).arg(layout.rows)
-                              .arg(layout.columns*layout.rows).arg(sizeName)
-                              .arg(layout.rotated?" (مدوّر)":"")
-                              + (repeats>0
-                                 ? QString(" — تكرار %1 نسخة لملء الورقة").arg(repeats)
-                                 : QString()));
-    } else {
-        const int totalSlots=columns->value()*rows->value();
-        const int repeats=photos.empty()?0:qMax(0,totalSlots-static_cast<int>(photos.size()));
-        layoutStatus->setText(QString("يدوي: %1 × %2 خلايا — المقاس الفعلي %3")
-                              .arg(columns->value()).arg(rows->value()).arg(sizeName)
-                              + (repeats>0
-                                 ? QString(" — تكرار %1 نسخة لملء الورقة").arg(repeats)
-                                 : QString()));
-    }
+    const int totalSlots=layout.columns*layout.rows;
+    const int repeats=photos.empty()?0:qMax(0,totalSlots-static_cast<int>(photos.size()));
+    const QString orientation=layout.landscape?"أفقي":"رأسي";
+    layoutStatus->setText(QString("%1 %2: %3 أعمدة × %4 صفوف = %5 صور مقاس %6")
+                          .arg(paperName).arg(orientation).arg(layout.columns).arg(layout.rows)
+                          .arg(totalSlots).arg(sizeName)
+                          + (repeats>0
+                             ? QString(" — تكرار %1 نسخة لملء الورقة").arg(repeats)
+                             : QString()));
     rebuildPage();
 }
 
@@ -735,9 +710,13 @@ void MainWindow::savePdf()
     QString f=QFileDialog::getSaveFileName(this,"حفظ PDF",QDir::homePath()+"/صور_المعاملات.pdf","PDF (*.pdf)");
     if(f.isEmpty()) return;
     QPdfWriter pdf(f); pdf.setResolution(300);
-    QPageSize::PageSizeId id=(paper->currentIndex()<2)?QPageSize::A4:QPageSize::A5;
-    pdf.setPageSize(QPageSize(id));
-    pdf.setPageOrientation(paper->currentIndex()%2?QPageLayout::Landscape:QPageLayout::Portrait);
+    const LayoutInfo layout=calculateLayout();
+    const QPageSize::PageSizeId id=paper->currentIndex()==0?QPageSize::A4:
+        paper->currentIndex()==1?QPageSize::A5:QPageSize::Custom;
+    pdf.setPageSize(id==QPageSize::Custom
+                    ? QPageSize(QSizeF(paperSizeMm().width(),paperSizeMm().height()),QPageSize::Millimeter)
+                    : QPageSize(id));
+    pdf.setPageOrientation(layout.landscape?QPageLayout::Landscape:QPageLayout::Portrait);
     QRect target=pdf.pageLayout().paintRectPixels(pdf.resolution());
     QPainter p(&pdf);
     rebuildPage(&p,QRectF(target));
@@ -749,8 +728,13 @@ void MainWindow::printPage()
 {
     if(photos.empty()){QMessageBox::information(this,"تنبيه","أضف صورًا أولاً.");return;}
     QPrinter printer(QPrinter::HighResolution);
-    printer.setPageSize(paper->currentIndex()<2?QPageSize(QPageSize::A4):QPageSize(QPageSize::A5));
-    printer.setPageOrientation(paper->currentIndex()%2?QPageLayout::Landscape:QPageLayout::Portrait);
+    const LayoutInfo layout=calculateLayout();
+    const QPageSize::PageSizeId id=paper->currentIndex()==0?QPageSize::A4:
+        paper->currentIndex()==1?QPageSize::A5:QPageSize::Custom;
+    printer.setPageSize(id==QPageSize::Custom
+                        ? QPageSize(QSizeF(paperSizeMm().width(),paperSizeMm().height()),QPageSize::Millimeter)
+                        : QPageSize(id));
+    printer.setPageOrientation(layout.landscape?QPageLayout::Landscape:QPageLayout::Portrait);
     QPrintDialog dlg(&printer,this);
     if(dlg.exec()!=QDialog::Accepted) return;
     QRect target=printer.pageLayout().paintRectPixels(printer.resolution());
