@@ -12,6 +12,7 @@
 #include <QPainter>
 #include <QPdfWriter>
 #include <QPrintDialog>
+#include <QPrintPreviewDialog>
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QDateTime>
@@ -765,13 +766,18 @@ void MainWindow::printPage()
                         : QPageSize(id));
     printer.setPageMargins(QMarginsF(0,0,0,0));
     printer.setPageOrientation(layout.landscape?QPageLayout::Landscape:QPageLayout::Portrait);
-    QPrintDialog dlg(&printer,this);
-    if(dlg.exec()!=QDialog::Accepted) return;
-    QRect target=printer.pageLayout().paintRectPixels(printer.resolution());
-    QPainter p(&printer);
-    rebuildPage(&p,QRectF(target));
-    p.end();
-    status->setText("تم إرسال الصفحة إلى الطابعة");
+    QPrintPreviewDialog preview(&printer,this);
+    preview.setWindowTitle("معاينة الطباعة");
+    preview.setMinimumSize(1000,700);
+    connect(&preview,&QPrintPreviewDialog::paintRequested,this,
+            [this](QPrinter *previewPrinter){
+                const QRect target=previewPrinter->pageLayout().paintRectPixels(previewPrinter->resolution());
+                QPainter painter(previewPrinter);
+                rebuildPage(&painter,QRectF(target));
+                painter.end();
+            });
+    if(preview.exec()!=QDialog::Accepted) return;
+    status->setText("تمت معاينة الصفحة وإرسالها إلى الطابعة");
 }
 
 void MainWindow::saveImages()
