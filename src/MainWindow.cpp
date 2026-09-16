@@ -1,4 +1,4 @@
-#include "MainWindow.h"
+﻿#include "MainWindow.h"
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QFormLayout>
@@ -126,10 +126,14 @@ void MainWindow::buildUi()
     s->addWidget(title);
     s->addWidget(sub);
 
-    auto *add = new QPushButton("＋  إضافة صور");
-    auto *folder = new QPushButton("📁  إضافة مجلد");
+    auto *add = new QPushButton("إضافة صور");
+    add->setObjectName("primary");
+    auto *folder = new QPushButton("إضافة مجلد");
+    folder->setObjectName("secondary");
     auto *del = new QPushButton("حذف المحدد");
+    del->setObjectName("danger");
     auto *clear = new QPushButton("تفريغ الكل");
+    clear->setObjectName("danger");
     connect(add,&QPushButton::clicked,this,&MainWindow::addPhotos);
     connect(folder,&QPushButton::clicked,this,&MainWindow::addFolder);
     connect(del,&QPushButton::clicked,this,&MainWindow::removeSelected);
@@ -140,13 +144,21 @@ void MainWindow::buildUi()
     list = new QListWidget;
     list->setSelectionMode(QAbstractItemView::ExtendedSelection);
     list->setIconSize(QSize(48,48));
-    s->addWidget(new QLabel("الصور  (يمكن اختيار أكثر من صورة، ويدعم السحب من خارج البرنامج)"));
+    list->setAlternatingRowColors(true);
+    list->setMovement(QListView::Static);
+    list->setSpacing(4);
+    auto *listTitle = new QLabel("الصور (يمكن اختيار أكثر من صورة، ويدعم السحب من خارج البرنامج)");
+    listTitle->setObjectName("listTitle");
+    s->addWidget(listTitle);
     s->addWidget(list,1);
 
     auto *moveRow = new QHBoxLayout;
-    auto *up = new QPushButton("▲ تحريك لأعلى");
-    auto *down = new QPushButton("▼ تحريك لأسفل");
-    auto *autoNum = new QPushButton("🔢 ترقيم تلقائي للأسماء");
+    auto *up = new QPushButton("تحريك لأعلى");
+    up->setObjectName("secondary");
+    auto *down = new QPushButton("تحريك لأسفل");
+    down->setObjectName("secondary");
+    auto *autoNum = new QPushButton("ترقيم تلقائي للأسماء");
+    autoNum->setObjectName("secondary");
     connect(up,&QPushButton::clicked,this,&MainWindow::moveSelectedUp);
     connect(down,&QPushButton::clicked,this,&MainWindow::moveSelectedDown);
     connect(autoNum,&QPushButton::clicked,this,&MainWindow::autoNumberNames);
@@ -191,16 +203,20 @@ void MainWindow::buildUi()
     form->addRow("المسافة:",gap);
     s->addLayout(form);
 
-    auto *process = new QPushButton("✨  تحسين ومعالجة الكل");
+    auto *process = new QPushButton("تحسين ومعالجة الكل");
     process->setObjectName("primary");
-    auto *reset = new QPushButton("↶  إعادة الصور الأصلية");
+    auto *reset = new QPushButton("إعادة الصور الأصلية");
+    reset->setObjectName("danger");
     connect(process,&QPushButton::clicked,this,&MainWindow::processAll);
     connect(reset,&QPushButton::clicked,this,&MainWindow::resetProcessing);
     s->addWidget(process); s->addWidget(reset);
 
-    auto *pdf = new QPushButton("📄  حفظ PDF");
-    auto *print = new QPushButton("🖨  طباعة مباشرة");
-    auto *imgs = new QPushButton("💾  حفظ الصور المعالجة");
+    auto *pdf = new QPushButton("حفظ PDF");
+    pdf->setObjectName("secondary");
+    auto *print = new QPushButton("طباعة مباشرة");
+    print->setObjectName("primary");
+    auto *imgs = new QPushButton("حفظ الصور المعالجة");
+    imgs->setObjectName("secondary");
     connect(pdf,&QPushButton::clicked,this,&MainWindow::savePdf);
     connect(print,&QPushButton::clicked,this,&MainWindow::printPage);
     connect(imgs,&QPushButton::clicked,this,&MainWindow::saveImages);
@@ -208,8 +224,10 @@ void MainWindow::buildUi()
 
     progress = new QProgressBar;
     progress->setRange(0,100);
+    progress->setTextVisible(true);
     status = new QLabel("جاهز");
     status->setObjectName("status");
+    status->setAlignment(Qt::AlignCenter);
     s->addWidget(progress); s->addWidget(status);
 
     auto *right = new QVBoxLayout;
@@ -220,7 +238,9 @@ void MainWindow::buildUi()
     view = new QGraphicsView(scene);
     view->setRenderHint(QPainter::Antialiasing);
     view->setRenderHint(QPainter::SmoothPixmapTransform);
-    view->setBackgroundBrush(QColor("#dfe3ea"));
+    view->setBackgroundBrush(QColor("#dfe6f0"));
+    view->setFrameShape(QFrame::StyledPanel);
+    view->setFrameShadow(QFrame::Sunken);
     right->addWidget(view,1);
 
     main->addLayout(right,1);
@@ -248,17 +268,38 @@ void MainWindow::buildUi()
     });
 
     setStyleSheet(R"(
-        QWidget{font-family:"Segoe UI";font-size:14px;}
-        QFrame#side{background:#f7f8fb;border:1px solid #d9dee8;border-radius:16px;}
-        QLabel#title{font-size:27px;font-weight:800;padding:4px;}
-        QLabel#sub{color:#687386;padding:0 4px 6px;}
-        QLabel#head{font-size:21px;font-weight:700;padding:5px;}
-        QLabel#status{background:#edf1f6;border-radius:8px;padding:9px;}
-        QPushButton{padding:10px;border:1px solid #d3d9e3;border-radius:8px;background:white;}
-        QPushButton:hover{background:#edf3ff;}
-        QPushButton#primary{background:#2563eb;color:white;border:none;font-weight:700;}
-        QListWidget{background:white;border:1px solid #d9dee8;border-radius:9px;}
-        QLineEdit,QComboBox,QSpinBox,QDoubleSpinBox{padding:7px;border:1px solid #ccd3df;border-radius:7px;background:white;}
+        QWidget{background:#eef2f7;color:#172033;font-family:"Segoe UI","Tahoma","Arial",sans-serif;font-size:14px;}
+        QMainWindow{background:#eef2f7;}
+        QFrame#side{background:#f9fbff;border:1px solid #b9c4d3;border-radius:16px;}
+        QLabel#title{color:#172033;font-size:28px;font-weight:800;padding:4px 4px 0;}
+        QLabel#sub{color:#526176;font-size:12px;font-weight:600;padding:0 4px 10px;}
+        QLabel#listTitle{color:#172033;font-size:15px;font-weight:700;padding:6px 2px;}
+        QLabel#head{color:#172033;font-size:22px;font-weight:700;padding:5px 0 8px;}
+        QLabel#status{background:#f8fafc;color:#172033;border:1px solid #c4cedd;border-radius:9px;padding:10px 12px;font-weight:700;}
+        QPushButton{background:#ffffff;color:#172033;border:1px solid #b9c4d3;border-radius:10px;min-height:42px;padding:10px 14px;font-weight:700;font-size:14px;}
+        QPushButton:hover{background:#edf5ff;border-color:#7ca9f5;}
+        QPushButton:pressed{background:#dfeeff;border-color:#5f8ee8;}
+        QPushButton:focus{outline:none;border:2px solid #3b82f6;}
+        QPushButton:disabled{background:#edf1f5;color:#7d8ca2;border-color:#d3dae5;}
+        QPushButton#primary{background:#155eef;color:#ffffff;border:1px solid #0f53d2;}
+        QPushButton#primary:hover{background:#0f53d2;}
+        QPushButton#primary:pressed{background:#0b47b9;}
+        QPushButton#secondary{background:#ffffff;color:#172033;border:1px solid #b9c4d3;}
+        QPushButton#secondary:hover{background:#f3f7ff;border-color:#7ca9f5;}
+        QPushButton#danger{background:#fff5f4;color:#b42318;border:1px solid #e1a9a2;}
+        QPushButton#danger:hover{background:#fde8e6;border-color:#cd5b4f;}
+        QPushButton#danger:pressed{background:#f7d1cc;border-color:#af3d32;}
+        QListWidget{background:#ffffff;border:1px solid #b9c4d3;border-radius:10px;padding:6px;color:#172033;alternate-background-color:#f7f9fc;selection-background-color:#dfeeff;selection-color:#172033;}
+        QListWidget::item{padding:8px 10px;border:1px solid transparent;border-radius:8px;}
+        QListWidget::item:selected{background:#dfeeff;border:1px solid #9ebef8;}
+        QLineEdit,QComboBox,QSpinBox,QDoubleSpinBox{background:#ffffff;color:#172033;padding:8px 10px;border:1px solid #b9c4d3;border-radius:8px;min-height:36px;}
+        QLineEdit:focus,QComboBox:focus,QSpinBox:focus,QDoubleSpinBox:focus{border:2px solid #3b82f6;}
+        QCheckBox{color:#172033;spacing:8px;font-weight:600;}
+        QCheckBox::indicator{width:18px;height:18px;border:1px solid #b9c4d3;border-radius:4px;background:#ffffff;}
+        QCheckBox::indicator:checked{background:#155eef;border-color:#155eef;}
+        QProgressBar{border:1px solid #b9c4d3;border-radius:8px;background:#edf1f6;text-align:center;min-height:20px;}
+        QProgressBar::chunk{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #3a85f5, stop:1 #155eef);border-radius:7px;}
+        QAbstractScrollArea{border:0;}
     )");
 }
 
@@ -577,3 +618,4 @@ void MainWindow::saveImages()
     }
     status->setText(QString("تم حفظ %1 صورة").arg(n));
 }
+
