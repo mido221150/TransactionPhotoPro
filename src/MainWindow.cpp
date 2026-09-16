@@ -85,7 +85,6 @@ void MainWindow::loadSettings()
 {
     QSettings s("TransactionPhotoPro","TransactionPhotoPro");
     paper->setCurrentIndex(s.value("paper",0).toInt());
-    photoSize->setCurrentIndex(s.value("photoSize",0).toInt());
     autoLayout->setChecked(s.value("autoLayout",true).toBool());
     columns->setValue(s.value("columns",2).toInt());
     rows->setValue(s.value("rows",2).toInt());
@@ -104,7 +103,6 @@ void MainWindow::saveSettings()
 {
     QSettings s("TransactionPhotoPro","TransactionPhotoPro");
     s.setValue("paper",paper->currentIndex());
-    s.setValue("photoSize",photoSize->currentIndex());
     s.setValue("autoLayout",autoLayout->isChecked());
     s.setValue("columns",columns->value());
     s.setValue("rows",rows->value());
@@ -194,8 +192,10 @@ void MainWindow::buildUi()
     auto *form = new QFormLayout(paperGroup);
     paper = new QComboBox;
     paper->addItems({"A4 رأسي","A4 أفقي","A5 رأسي","A5 أفقي"});
-    photoSize = new QComboBox;
-    photoSize->addItems({"4 × 6 سم","3 × 4 سم","5 × 7 سم","3.5 × 4.5 سم"});
+    photoSizeLabel = new QLabel("4 × 6 سم");
+    photoSizeLabel->setObjectName("fixedPhotoSize");
+    photoSizeLabel->setAlignment(Qt::AlignCenter);
+    photoSizeLabel->setToolTip("مقاس الصور ثابت في هذا الإصدار");
     autoLayout = new QCheckBox("تخطيط تلقائي (أفضل عدد ممكن)");
     autoLayout->setChecked(true);
     columns = new QSpinBox; columns->setRange(1,8); columns->setValue(2);
@@ -218,7 +218,7 @@ void MainWindow::buildUi()
     margin = new QDoubleSpinBox; margin->setRange(2,30); margin->setValue(8); margin->setSuffix(" مم");
     gap = new QDoubleSpinBox; gap->setRange(1,25); gap->setValue(4); gap->setSuffix(" مم");
     form->addRow("الورق:",paper);
-    form->addRow("مقاس الصورة:",photoSize);
+    form->addRow("مقاس الصورة الثابت:",photoSizeLabel);
     form->addRow("",autoLayout);
     form->addRow("الأعمدة اليدوية:",columns);
     form->addRow("الصفوف اليدوية:",rows);
@@ -317,7 +317,6 @@ void MainWindow::buildUi()
 
     auto changed = [this](){ updatePreview(); };
     connect(paper,&QComboBox::currentIndexChanged,this,changed);
-    connect(photoSize,&QComboBox::currentIndexChanged,this,changed);
     connect(autoLayout,&QCheckBox::toggled,this,[this](bool enabled){
         columns->setEnabled(!enabled);
         rows->setEnabled(!enabled);
@@ -357,6 +356,7 @@ void MainWindow::buildUi()
         QLabel#previewHint{color:#607089;font-size:12px;font-weight:600;padding:0 2px 5px;}
         QLabel#status{background:#f8fafc;color:#172033;border:1px solid #c4cedd;border-radius:9px;padding:10px 12px;font-weight:700;}
         QLabel#layoutStatus{background:#edf5ff;color:#164b9b;border:1px solid #a9c8f5;border-radius:8px;padding:7px;font-weight:700;}
+        QLabel#fixedPhotoSize{background:#f1f4f8;color:#26364f;border:1px solid #c4cedd;border-radius:8px;padding:8px 10px;font-weight:800;}
         QGroupBox{border:1px solid #c4cedd;border-radius:10px;margin-top:9px;padding:12px 10px 10px;font-weight:700;color:#26364f;}
         QGroupBox::title{subcontrol-origin:margin;right:10px;padding:0 5px;background:#f9fbff;}
         QPushButton{background:#ffffff;color:#172033;border:1px solid #b9c4d3;border-radius:10px;min-height:42px;padding:10px 14px;font-weight:700;font-size:14px;}
@@ -613,12 +613,7 @@ QSize MainWindow::paperPixels() const
 
 QSizeF MainWindow::selectedPhotoSize() const
 {
-    switch(photoSize->currentIndex()){
-    case 1: return QSizeF(3.0,4.0);
-    case 2: return QSizeF(5.0,7.0);
-    case 3: return QSizeF(3.5,4.5);
-    default: return QSizeF(4.0,6.0);
-    }
+    return QSizeF(4.0,6.0);
 }
 
 MainWindow::LayoutInfo MainWindow::calculateLayout() const
@@ -711,7 +706,7 @@ void MainWindow::updatePreview()
 {
     const LayoutInfo layout=calculateLayout();
     const QString paperName=paper->currentText();
-    const QString sizeName=photoSize->currentText();
+    const QString sizeName="4 × 6 سم";
     if(autoLayout->isChecked()){
         const int totalSlots=layout.columns*layout.rows;
         const int repeats=photos.empty()?0:qMax(0,totalSlots-static_cast<int>(photos.size()));

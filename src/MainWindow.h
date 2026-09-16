@@ -67,12 +67,12 @@ private:
     QListWidget *list{};
     QGraphicsView *view{};
     QGraphicsScene *scene{};
-    QComboBox *paper{}, *photoSize{}, *quality{};
+    QComboBox *paper{}, *quality{};
     QSpinBox *columns{}, *rows{}, *fontSize{};
     QSpinBox *bgTolerance{}, *bgFeather{};
     QCheckBox *autoLayout{}, *removeBg{}, *whiteBg{}, *showNames{};
     QLineEdit *nameEdit{};
     QDoubleSpinBox *margin{}, *gap{};
     QProgressBar *progress{};
-    QLabel *status{}, *layoutStatus{};
+    QLabel *status{}, *layoutStatus{}, *photoSizeLabel{};
 };
