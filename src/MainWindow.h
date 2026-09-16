@@ -76,4 +76,5 @@ private:
     QDoubleSpinBox *margin{}, *gap{};
     QProgressBar *progress{};
     QLabel *status{}, *layoutStatus{}, *photoSizeLabel{};
+    QLabel *paperSizeLabel{};
 };

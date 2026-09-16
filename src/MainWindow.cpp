@@ -84,14 +84,22 @@ void MainWindow::dropEvent(QDropEvent *event)
 void MainWindow::loadSettings()
 {
     QSettings s("TransactionPhotoPro","TransactionPhotoPro");
-    paper->setCurrentIndex(qBound(0,s.value("paper",0).toInt(),3));
+    paper->setCurrentIndex(qBound(0,s.value("paper",0).toInt(),5));
     quality->setCurrentIndex(s.value("quality",1).toInt());
     removeBg->setChecked(s.value("removeBg",true).toBool());
     whiteBg->setChecked(s.value("whiteBg",true).toBool());
     showNames->setChecked(s.value("showNames",true).toBool());
     fontSize->setValue(s.value("fontSize",17).toInt());
-    margin->setValue(s.value("margin",8.0).toDouble());
-    gap->setValue(s.value("gap",4.0).toDouble());
+    // Practical studio defaults: these produce usable cut lines and the
+    // expected counts on the standard paper sizes.
+    if(!s.value("layoutDefaultsVersion").isValid()){
+        margin->setValue(5.0);
+        gap->setValue(3.0);
+        s.setValue("layoutDefaultsVersion",2);
+    } else {
+        margin->setValue(s.value("margin",5.0).toDouble());
+        gap->setValue(s.value("gap",3.0).toDouble());
+    }
     bgTolerance->setValue(s.value("bgTolerance",23).toInt());
     bgFeather->setValue(s.value("bgFeather",2).toInt());
 }
@@ -107,6 +115,7 @@ void MainWindow::saveSettings()
     s.setValue("fontSize",fontSize->value());
     s.setValue("margin",margin->value());
     s.setValue("gap",gap->value());
+    s.setValue("layoutDefaultsVersion",2);
     s.setValue("bgTolerance",bgTolerance->value());
     s.setValue("bgFeather",bgFeather->value());
 }
@@ -185,7 +194,7 @@ void MainWindow::buildUi()
     auto *paperGroup = new QGroupBox("حجم الورق والتخطيط التلقائي");
     auto *form = new QFormLayout(paperGroup);
     paper = new QComboBox;
-    paper->addItems({"A4","A5","10 × 15 سم","Letter"});
+    paper->addItems({"A4","A5","10 × 15 سم","Letter","A3","13 × 18 سم"});
     photoSizeLabel = new QLabel("4 × 6 سم");
     photoSizeLabel->setObjectName("fixedPhotoSize");
     photoSizeLabel->setAlignment(Qt::AlignCenter);
@@ -208,6 +217,10 @@ void MainWindow::buildUi()
     margin = new QDoubleSpinBox; margin->setRange(2,30); margin->setValue(8); margin->setSuffix(" مم");
     gap = new QDoubleSpinBox; gap->setRange(1,25); gap->setValue(4); gap->setSuffix(" مم");
     form->addRow("الورق:",paper);
+    paperSizeLabel = new QLabel;
+    paperSizeLabel->setObjectName("paperSizeLabel");
+    paperSizeLabel->setAlignment(Qt::AlignCenter);
+    form->addRow("أبعاد الورق:",paperSizeLabel);
     form->addRow("مقاس الصورة الثابت:",photoSizeLabel);
     auto *autoLayoutLabel = new QLabel("تخطيط تلقائي: اتجاه الورق الأفضل وعدد الخانات");
     autoLayoutLabel->setObjectName("autoLayoutLabel");
@@ -338,6 +351,7 @@ void MainWindow::buildUi()
         QLabel#status{background:#f8fafc;color:#172033;border:1px solid #c4cedd;border-radius:9px;padding:10px 12px;font-weight:700;}
         QLabel#layoutStatus{background:#edf5ff;color:#164b9b;border:1px solid #a9c8f5;border-radius:8px;padding:7px;font-weight:700;}
         QLabel#fixedPhotoSize{background:#f1f4f8;color:#26364f;border:1px solid #c4cedd;border-radius:8px;padding:8px 10px;font-weight:800;}
+        QLabel#paperSizeLabel{background:#f1f4f8;color:#26364f;border:1px solid #c4cedd;border-radius:8px;padding:8px 10px;font-weight:800;}
         QGroupBox{border:1px solid #c4cedd;border-radius:10px;margin-top:9px;padding:12px 10px 10px;font-weight:700;color:#26364f;}
         QGroupBox::title{subcontrol-origin:margin;right:10px;padding:0 5px;background:#f9fbff;}
         QPushButton{background:#ffffff;color:#172033;border:1px solid #b9c4d3;border-radius:10px;min-height:42px;padding:10px 14px;font-weight:700;font-size:14px;}
@@ -603,6 +617,8 @@ QSizeF MainWindow::paperSizeMm() const
     case 1: return QSizeF(148.0,210.0);
     case 2: return QSizeF(100.0,150.0);
     case 3: return QSizeF(215.9,279.4);
+    case 4: return QSizeF(297.0,420.0);
+    case 5: return QSizeF(130.0,180.0);
     default: return QSizeF(210.0,297.0);
     }
 }
@@ -619,7 +635,12 @@ MainWindow::LayoutInfo MainWindow::calculateLayout() const
     };
     const auto portrait=count(portraitCm);
     const auto landscape=count(QSizeF(portraitCm.height(),portraitCm.width()));
-    const bool useLandscape=landscape.first*landscape.second > portrait.first*portrait.second;
+    const int portraitCount=portrait.first*portrait.second;
+    const int landscapeCount=landscape.first*landscape.second;
+    // A5 is deliberately laid out as 2 × 4: it is the practical studio
+    // arrangement for cutting, even though a tight 3 × 3 also fits.
+    const bool useLandscape=(paper->currentIndex()==1 && landscapeCount>0)
+                            || landscapeCount>portraitCount;
     const auto chosen=useLandscape?landscape:portrait;
     LayoutInfo best;
     best.columns=chosen.first;
@@ -695,8 +716,11 @@ void MainWindow::updatePreview()
     const int totalSlots=layout.columns*layout.rows;
     const int repeats=photos.empty()?0:qMax(0,totalSlots-static_cast<int>(photos.size()));
     const QString orientation=layout.landscape?"أفقي":"رأسي";
-    layoutStatus->setText(QString("%1 %2: %3 أعمدة × %4 صفوف = %5 صور مقاس %6")
-                          .arg(paperName).arg(orientation).arg(layout.columns).arg(layout.rows)
+    const QSizeF paperMm=paperSizeMm();
+    paperSizeLabel->setText(QString("%1 × %2 مم").arg(qRound(paperMm.width())).arg(qRound(paperMm.height())));
+    layoutStatus->setText(QString("%1 (%2 × %3 مم) — تخطيط عملي %4: %5 أعمدة × %6 صفوف = %7 صور مقاس %8")
+                          .arg(paperName).arg(qRound(paperMm.width())).arg(qRound(paperMm.height()))
+                          .arg(orientation).arg(layout.columns).arg(layout.rows)
                           .arg(totalSlots).arg(sizeName)
                           + (repeats>0
                              ? QString(" — تكرار %1 نسخة لملء الورقة").arg(repeats)
@@ -712,10 +736,13 @@ void MainWindow::savePdf()
     QPdfWriter pdf(f); pdf.setResolution(300);
     const LayoutInfo layout=calculateLayout();
     const QPageSize::PageSizeId id=paper->currentIndex()==0?QPageSize::A4:
-        paper->currentIndex()==1?QPageSize::A5:QPageSize::Custom;
+        paper->currentIndex()==1?QPageSize::A5:
+        paper->currentIndex()==3?QPageSize::Letter:
+        paper->currentIndex()==4?QPageSize::A3:QPageSize::Custom;
     pdf.setPageSize(id==QPageSize::Custom
                     ? QPageSize(QSizeF(paperSizeMm().width(),paperSizeMm().height()),QPageSize::Millimeter)
                     : QPageSize(id));
+    pdf.setPageMargins(QMarginsF(0,0,0,0));
     pdf.setPageOrientation(layout.landscape?QPageLayout::Landscape:QPageLayout::Portrait);
     QRect target=pdf.pageLayout().paintRectPixels(pdf.resolution());
     QPainter p(&pdf);
@@ -730,10 +757,13 @@ void MainWindow::printPage()
     QPrinter printer(QPrinter::HighResolution);
     const LayoutInfo layout=calculateLayout();
     const QPageSize::PageSizeId id=paper->currentIndex()==0?QPageSize::A4:
-        paper->currentIndex()==1?QPageSize::A5:QPageSize::Custom;
+        paper->currentIndex()==1?QPageSize::A5:
+        paper->currentIndex()==3?QPageSize::Letter:
+        paper->currentIndex()==4?QPageSize::A3:QPageSize::Custom;
     printer.setPageSize(id==QPageSize::Custom
                         ? QPageSize(QSizeF(paperSizeMm().width(),paperSizeMm().height()),QPageSize::Millimeter)
                         : QPageSize(id));
+    printer.setPageMargins(QMarginsF(0,0,0,0));
     printer.setPageOrientation(layout.landscape?QPageLayout::Landscape:QPageLayout::Portrait);
     QPrintDialog dlg(&printer,this);
     if(dlg.exec()!=QDialog::Accepted) return;
