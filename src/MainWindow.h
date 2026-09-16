@@ -3,7 +3,6 @@
 #include <QListWidget>
 #include <QGraphicsView>
 #include <QGraphicsScene>
-#include <QSpinBox>
 #include <QComboBox>
 #include <QLineEdit>
 #include <QCheckBox>
@@ -14,12 +13,14 @@
 #include <QImage>
 #include <QPrinter>
 #include <QSizeF>
+#include <QSpinBox>
 #include <vector>
 
 struct PhotoItem {
     QImage original;
     QImage processed;
     QString name;
+    QString sourcePath;
 };
 
 class MainWindow : public QMainWindow {
@@ -45,10 +46,14 @@ private slots:
     void moveSelectedUp();
     void moveSelectedDown();
     void autoNumberNames();
+    void saveProject();
+    void openProject();
+    void previousPage();
+    void nextPage();
 private:
     void buildUi();
     void addImageFile(const QString &f);
-    void rebuildPage(QPainter *external=nullptr, const QRectF &target=QRectF());
+    void rebuildPage(QPainter *external=nullptr, const QRectF &target=QRectF(), int page=0);
     struct LayoutInfo {
         int columns{0};
         int rows{0};
@@ -59,11 +64,16 @@ private:
     QSizeF selectedPhotoSize() const;
     QSizeF paperSizeMm() const;
     QImage processImage(const QImage &in) const;
+    QImage cropToOutput(const QImage &in) const;
     QImage sharpen(const QImage &in, int amount) const;
     QImage removeLightBackground(const QImage &in) const;
     QSize paperPixels() const;
     void loadSettings();
     void saveSettings();
+    void updateListItem(int index);
+    int photosPerPage() const;
+    int pageCount() const;
+    QImage outputImage(const PhotoItem &photo) const;
     std::vector<PhotoItem> photos;
     QListWidget *list{};
     QGraphicsView *view{};
@@ -77,4 +87,7 @@ private:
     QProgressBar *progress{};
     QLabel *status{}, *layoutStatus{}, *photoSizeLabel{};
     QLabel *paperSizeLabel{};
+    QLabel *pageLabel{};
+    QPushButton *previousPageButton{}, *nextPageButton{};
+    int currentPage{0};
 };

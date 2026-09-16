@@ -26,6 +26,9 @@
 #include <QCloseEvent>
 #include <QMimeData>
 #include <QSettings>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QUrl>
 #include <QQueue>
 #include <algorithm>
@@ -164,6 +167,20 @@ void MainWindow::buildUi()
     photoActionLayout->addWidget(clear, 1, 1);
     s->addWidget(photoActions);
 
+    auto *projectActions = new QHBoxLayout;
+    auto *openProjectButton = new QPushButton("فتح مشروع");
+    auto *saveProjectButton = new QPushButton("حفظ مشروع");
+    openProjectButton->setObjectName("secondary");
+    saveProjectButton->setObjectName("secondary");
+    connect(openProjectButton,&QPushButton::clicked,this,&MainWindow::openProject);
+    connect(saveProjectButton,&QPushButton::clicked,this,&MainWindow::saveProject);
+    projectActions->addWidget(openProjectButton);
+    projectActions->addWidget(saveProjectButton);
+    auto *projectGroup = new QGroupBox("المشاريع");
+    auto *projectLayout = new QVBoxLayout(projectGroup);
+    projectLayout->addLayout(projectActions);
+    s->addWidget(projectGroup);
+
     list = new QListWidget;
     list->setSelectionMode(QAbstractItemView::ExtendedSelection);
     list->setIconSize(QSize(48,48));
@@ -293,6 +310,19 @@ void MainWindow::buildUi()
     previewHint->setObjectName("previewHint");
     previewLayout->addWidget(head);
     previewLayout->addWidget(previewHint);
+    auto *pageControls = new QHBoxLayout;
+    previousPageButton = new QPushButton("‹ الصفحة السابقة");
+    nextPageButton = new QPushButton("الصفحة التالية ›");
+    pageLabel = new QLabel("صفحة 1 من 1");
+    pageLabel->setAlignment(Qt::AlignCenter);
+    previousPageButton->setObjectName("secondary");
+    nextPageButton->setObjectName("secondary");
+    connect(previousPageButton,&QPushButton::clicked,this,&MainWindow::previousPage);
+    connect(nextPageButton,&QPushButton::clicked,this,&MainWindow::nextPage);
+    pageControls->addWidget(previousPageButton);
+    pageControls->addWidget(pageLabel,1);
+    pageControls->addWidget(nextPageButton);
+    previewLayout->addLayout(pageControls);
     scene = new QGraphicsScene(this);
     view = new QGraphicsView(scene);
     view->setRenderHint(QPainter::Antialiasing);
@@ -329,7 +359,7 @@ void MainWindow::buildUi()
         int r=list->currentRow();
         if(r>=0 && r<(int)photos.size()) {
             photos[r].name=v;
-            if(list->item(r)) list->item(r)->setText(v);
+            updateListItem(r);
         }
         updatePreview();
     });
@@ -386,11 +416,32 @@ void MainWindow::addImageFile(const QString &f)
 {
     QImage im(f);
     if(im.isNull()) return;
-    PhotoItem p{im.convertToFormat(QImage::Format_ARGB32), im.convertToFormat(QImage::Format_ARGB32),
-                QFileInfo(f).completeBaseName()};
+    PhotoItem p{im.convertToFormat(QImage::Format_ARGB32), cropToOutput(im),
+                QFileInfo(f).completeBaseName(), QFileInfo(f).absoluteFilePath()};
     photos.push_back(p);
     auto *item = new QListWidgetItem(QIcon(QPixmap::fromImage(im.scaled(48,48,Qt::KeepAspectRatio,Qt::SmoothTransformation))),p.name);
     list->addItem(item);
+    updateListItem(static_cast<int>(photos.size())-1);
+}
+
+void MainWindow::updateListItem(int index)
+{
+    if(index<0 || index>=static_cast<int>(photos.size()) || !list->item(index)) return;
+    const PhotoItem &photo=photos[index];
+    const bool low=photo.original.width()<472 || photo.original.height()<709;
+    const QString label=low
+        ? QString("%1  •  دقة منخفضة (%2×%3)").arg(photo.name).arg(photo.original.width()).arg(photo.original.height())
+        : QString("%1  •  %2×%3").arg(photo.name).arg(photo.original.width()).arg(photo.original.height());
+    list->item(index)->setText(label);
+    list->item(index)->setToolTip(low
+        ? "تحذير: أبعاد المصدر أقل من 472×709. لن يتم منع التصدير، لكن الجودة قد تنخفض."
+        : QString("المصدر: %1×%2 بكسل — مناسب لإخراج 472×709").arg(photo.original.width()).arg(photo.original.height()));
+    list->item(index)->setForeground(low ? QBrush(QColor("#b54708")) : QBrush(QColor("#172033")));
+}
+
+QImage MainWindow::outputImage(const PhotoItem &photo) const
+{
+    return photo.processed.isNull() ? cropToOutput(photo.original) : photo.processed;
 }
 
 void MainWindow::addPhotos()
@@ -463,7 +514,7 @@ void MainWindow::autoNumberNames()
     for(int i=0;i<(int)photos.size();++i){
         QString newName = QString("%1 %2").arg(base).arg(i+1);
         photos[i].name = newName;
-        if(list->item(i)) list->item(i)->setText(newName);
+        updateListItem(i);
     }
     status->setText("تم ترقيم الأسماء تلقائيًا");
     updatePreview();
@@ -567,7 +618,7 @@ QImage MainWindow::sharpen(const QImage &in,int amount) const
 
 QImage MainWindow::processImage(const QImage &in) const
 {
-    QImage src=in.convertToFormat(QImage::Format_ARGB32);
+    QImage src=cropToOutput(in);
     int amount=quality->currentIndex()+1;
     QImage out=sharpen(src,amount);
     if(removeBg->isChecked()) out=removeLightBackground(out);
@@ -576,6 +627,28 @@ QImage MainWindow::processImage(const QImage &in) const
         QPainter p(&bg); p.drawImage(0,0,out); p.end(); out=bg;
     }
     return out;
+}
+
+QImage MainWindow::cropToOutput(const QImage &in) const
+{
+    if(in.isNull()) return {};
+    constexpr double targetAspect=472.0/709.0;
+    const double sourceAspect=double(in.width())/double(in.height());
+    QRect crop;
+    if(sourceAspect>targetAspect) {
+        const int w=qMax(1,qRound(in.height()*targetAspect));
+        crop=QRect((in.width()-w)/2,0,w,in.height());
+    } else {
+        const int h=qMax(1,qRound(in.width()/targetAspect));
+        crop=QRect(0,(in.height()-h)/2,in.width(),h);
+    }
+    QImage cropped=in.copy(crop);
+    QImage output=cropped.scaled(472,709,Qt::IgnoreAspectRatio,Qt::SmoothTransformation)
+                       .convertToFormat(QImage::Format_ARGB32);
+    const int dotsPerMeter=qRound(300.0/0.0254);
+    output.setDotsPerMeterX(dotsPerMeter);
+    output.setDotsPerMeterY(dotsPerMeter);
+    return output;
 }
 
 void MainWindow::processAll()
@@ -593,7 +666,7 @@ void MainWindow::processAll()
 
 void MainWindow::resetProcessing()
 {
-    for(auto &p:photos) p.processed=p.original;
+    for(auto &p:photos) p.processed=cropToOutput(p.original);
     status->setText("تمت إعادة الصور الأصلية");
     updatePreview();
 }
@@ -651,11 +724,24 @@ MainWindow::LayoutInfo MainWindow::calculateLayout() const
     return best;
 }
 
-void MainWindow::rebuildPage(QPainter *external,const QRectF &target)
+int MainWindow::photosPerPage() const
+{
+    const LayoutInfo layout=calculateLayout();
+    return qMax(1,layout.columns*layout.rows);
+}
+
+int MainWindow::pageCount() const
+{
+    if(photos.empty()) return 1;
+    if(photos.size()==1) return 1;
+    return qMax(1,(static_cast<int>(photos.size())+photosPerPage()-1)/photosPerPage());
+}
+
+void MainWindow::rebuildPage(QPainter *external,const QRectF &target,int page)
 {
     QSize ps=paperPixels();
-    QImage page(ps,QImage::Format_RGB32); page.fill(Qt::white);
-    QPainter p(&page);
+    QImage pageImage(ps,QImage::Format_RGB32); pageImage.fill(Qt::white);
+    QPainter p(&pageImage);
     p.setRenderHint(QPainter::Antialiasing);
     p.setRenderHint(QPainter::SmoothPixmapTransform);
     const LayoutInfo layout=calculateLayout();
@@ -666,15 +752,18 @@ void MainWindow::rebuildPage(QPainter *external,const QRectF &target)
     const double cw=pw;
     const double ch=ph;
     const int per=c*r;
+    const int firstIndex=page*qMax(1,per);
+    const bool repeatSingle=photos.size()==1;
     const int slotCount=photos.empty()?0:per;
     for(int i=0;i<slotCount;++i){
         int rr=i/c, cc=i%c;
         double x=ps.width()-m-(cc+1)*cw-cc*g; // RTL
         double y=m+rr*(ch+g);
         QRectF photoRect(x,y,cw,ch);
-        const int photoIndex=i%static_cast<int>(photos.size());
-        QImage im=photos[photoIndex].processed;
-        if(im.isNull()) im=photos[photoIndex].original;
+        const int photoIndex=firstIndex+i;
+        if(photoIndex>=static_cast<int>(photos.size()) && !repeatSingle) continue;
+        const int actualIndex=repeatSingle ? 0 : photoIndex;
+        QImage im=outputImage(photos[actualIndex]);
         QImage fit=im.scaled(photoRect.size().toSize(),Qt::KeepAspectRatio,Qt::SmoothTransformation);
         QRectF ir(photoRect.x()+(photoRect.width()-fit.width())/2,
                   photoRect.y()+(photoRect.height()-fit.height())/2,
@@ -693,18 +782,18 @@ void MainWindow::rebuildPage(QPainter *external,const QRectF &target)
             p.setFont(f); p.setPen(Qt::black);
             const QRectF labelRect=photoRect.adjusted(3,photoRect.height()-f.pixelSize()-8,-3,-3);
             p.fillRect(labelRect,QColor(255,255,255,205));
-            p.drawText(labelRect,Qt::AlignCenter|Qt::TextWordWrap,photos[photoIndex].name);
+            p.drawText(labelRect,Qt::AlignCenter|Qt::TextWordWrap,photos[actualIndex].name);
         }
     }
     p.end();
 
     if(external){
         external->setRenderHint(QPainter::SmoothPixmapTransform);
-        external->drawImage(target,page);
+        external->drawImage(target,pageImage);
     } else {
         scene->clear();
         scene->setSceneRect(0,0,ps.width(),ps.height());
-        scene->addPixmap(QPixmap::fromImage(page));
+        scene->addPixmap(QPixmap::fromImage(pageImage));
         view->fitInView(scene->sceneRect(),Qt::KeepAspectRatio);
     }
 }
@@ -715,7 +804,7 @@ void MainWindow::updatePreview()
     const QString paperName=paper->currentText();
     const QString sizeName="4 × 6 سم — 472 × 709 بكسل";
     const int totalSlots=layout.columns*layout.rows;
-    const int repeats=photos.empty()?0:qMax(0,totalSlots-static_cast<int>(photos.size()));
+    const int repeats=(photos.size()==1)?qMax(0,totalSlots-1):0;
     const QString orientation=layout.landscape?"أفقي":"رأسي";
     const QSizeF paperMm=paperSizeMm();
     paperSizeLabel->setText(QString("%1 × %2 مم").arg(qRound(paperMm.width())).arg(qRound(paperMm.height())));
@@ -726,7 +815,22 @@ void MainWindow::updatePreview()
                           + (repeats>0
                              ? QString(" — تكرار %1 نسخة لملء الورقة").arg(repeats)
                              : QString()));
-    rebuildPage();
+    const int totalPages=pageCount();
+    currentPage=qBound(0,currentPage,totalPages-1);
+    pageLabel->setText(QString("صفحة %1 من %2").arg(currentPage+1).arg(totalPages));
+    previousPageButton->setEnabled(currentPage>0);
+    nextPageButton->setEnabled(currentPage+1<totalPages);
+    rebuildPage(nullptr,QRectF(),currentPage);
+}
+
+void MainWindow::previousPage()
+{
+    if(currentPage>0) { --currentPage; updatePreview(); }
+}
+
+void MainWindow::nextPage()
+{
+    if(currentPage+1<pageCount()) { ++currentPage; updatePreview(); }
 }
 
 void MainWindow::savePdf()
@@ -747,9 +851,13 @@ void MainWindow::savePdf()
     pdf.setPageOrientation(layout.landscape?QPageLayout::Landscape:QPageLayout::Portrait);
     QRect target=pdf.pageLayout().paintRectPixels(pdf.resolution());
     QPainter p(&pdf);
-    rebuildPage(&p,QRectF(target));
+    const int pages=pageCount();
+    for(int page=0; page<pages; ++page) {
+        if(page>0) pdf.newPage();
+        rebuildPage(&p,QRectF(target),page);
+    }
     p.end();
-    status->setText("تم حفظ PDF بجودة 300 DPI");
+    status->setText(QString("تم حفظ PDF بجودة 300 DPI — %1 صفحات").arg(pages));
 }
 
 void MainWindow::printPage()
@@ -773,11 +881,15 @@ void MainWindow::printPage()
             [this](QPrinter *previewPrinter){
                 const QRect target=previewPrinter->pageLayout().paintRectPixels(previewPrinter->resolution());
                 QPainter painter(previewPrinter);
-                rebuildPage(&painter,QRectF(target));
+                const int pages=pageCount();
+                for(int page=0; page<pages; ++page) {
+                    if(page>0) previewPrinter->newPage();
+                    rebuildPage(&painter,QRectF(target),page);
+                }
                 painter.end();
             });
     if(preview.exec()!=QDialog::Accepted) return;
-    status->setText("تمت معاينة الصفحة وإرسالها إلى الطابعة");
+    status->setText(QString("تمت معاينة وإرسال %1 صفحات إلى الطابعة").arg(pageCount()));
 }
 
 void MainWindow::saveImages()
@@ -790,12 +902,100 @@ void MainWindow::saveImages()
         QString safe=p.name;
         for(QChar c:QString("\\/:*?\"<>|")) safe.replace(c,'_');
         QString file=QDir(dir).filePath(safe+".png");
-        QImage output=p.processed.isNull()?p.original:p.processed;
-        output=output.scaled(472,709,Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
+        QImage output=outputImage(p);
         const int dotsPerMeter=qRound(300.0/0.0254);
         output.setDotsPerMeterX(dotsPerMeter);
         output.setDotsPerMeterY(dotsPerMeter);
         if(output.save(file,"PNG")) ++n;
     }
     status->setText(QString("تم حفظ %1 صورة").arg(n));
+}
+
+void MainWindow::saveProject()
+{
+    QString file=QFileDialog::getSaveFileName(this,"حفظ مشروع",QDir::homePath()+"/مشروع_صور.json",
+                                               "Transaction Photo Project (*.json)");
+    if(file.isEmpty()) return;
+    QJsonObject root;
+    root["version"]=1;
+    root["paper"]=paper->currentIndex();
+    root["quality"]=quality->currentIndex();
+    root["removeBg"]=removeBg->isChecked();
+    root["whiteBg"]=whiteBg->isChecked();
+    root["showNames"]=showNames->isChecked();
+    root["fontSize"]=fontSize->value();
+    root["margin"]=margin->value();
+    root["gap"]=gap->value();
+    root["bgTolerance"]=bgTolerance->value();
+    root["bgFeather"]=bgFeather->value();
+    QJsonArray imageArray;
+    for(const PhotoItem &photo : photos) {
+        QJsonObject item;
+        item["path"]=photo.sourcePath;
+        item["name"]=photo.name;
+        imageArray.append(item);
+    }
+    root["images"]=imageArray;
+    QFile out(file);
+    if(!out.open(QIODevice::WriteOnly)) {
+        QMessageBox::warning(this,"تعذر حفظ المشروع","لا يمكن الكتابة إلى الملف المحدد.");
+        return;
+    }
+    out.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    status->setText(QString("تم حفظ المشروع (%1 صورة)").arg(photos.size()));
+}
+
+void MainWindow::openProject()
+{
+    QString file=QFileDialog::getOpenFileName(this,"فتح مشروع",QDir::homePath(),
+                                               "Transaction Photo Project (*.json)");
+    if(file.isEmpty()) return;
+    QFile in(file);
+    if(!in.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this,"تعذر فتح المشروع","لا يمكن قراءة الملف المحدد.");
+        return;
+    }
+    QJsonParseError error;
+    const QJsonDocument document=QJsonDocument::fromJson(in.readAll(),&error);
+    if(error.error!=QJsonParseError::NoError || !document.isObject()) {
+        QMessageBox::warning(this,"ملف غير صالح","ملف المشروع ليس JSON صالحًا.");
+        return;
+    }
+    const QJsonObject root=document.object();
+    const QJsonArray imageArray=root.value("images").toArray();
+    photos.clear();
+    list->clear();
+    QStringList missing;
+    for(const QJsonValue &value : imageArray) {
+        const QJsonObject item=value.toObject();
+        const QString path=item.value("path").toString();
+        if(path.isEmpty() || !QFileInfo::exists(path)) {
+            missing << (path.isEmpty() ? QString("مسار غير محدد") : path);
+            continue;
+        }
+        const int before=static_cast<int>(photos.size());
+        addImageFile(path);
+        if(static_cast<int>(photos.size())>before) {
+            photos.back().name=item.value("name").toString(photos.back().name);
+            updateListItem(before);
+        }
+    }
+    paper->setCurrentIndex(qBound(0,root.value("paper").toInt(paper->currentIndex()),paper->count()-1));
+    quality->setCurrentIndex(qBound(0,root.value("quality").toInt(quality->currentIndex()),quality->count()-1));
+    removeBg->setChecked(root.value("removeBg").toBool(removeBg->isChecked()));
+    whiteBg->setChecked(root.value("whiteBg").toBool(whiteBg->isChecked()));
+    showNames->setChecked(root.value("showNames").toBool(showNames->isChecked()));
+    fontSize->setValue(root.value("fontSize").toInt(fontSize->value()));
+    margin->setValue(root.value("margin").toDouble(margin->value()));
+    gap->setValue(root.value("gap").toDouble(gap->value()));
+    bgTolerance->setValue(root.value("bgTolerance").toInt(bgTolerance->value()));
+    bgFeather->setValue(root.value("bgFeather").toInt(bgFeather->value()));
+    currentPage=0;
+    updatePreview();
+    if(!missing.isEmpty()) {
+        QMessageBox::warning(this,"صور مفقودة",
+            QString("تم فتح المشروع، لكن تعذر العثور على %1 صورة:\n%2")
+            .arg(missing.size()).arg(missing.join("\n")));
+    }
+    status->setText(QString("تم فتح المشروع — %1 صورة").arg(photos.size()));
 }
