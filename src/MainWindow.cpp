@@ -2,6 +2,7 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QGridLayout>
+#include <QScrollArea>
 #include <QFormLayout>
 #include <QFrame>
 #include <QGroupBox>
@@ -44,6 +45,13 @@ void MainWindow::closeEvent(QCloseEvent *event)
 {
     saveSettings();
     QMainWindow::closeEvent(event);
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
+    if(view && scene && !scene->sceneRect().isEmpty())
+        view->fitInView(scene->sceneRect(), Qt::KeepAspectRatio);
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent *event)
@@ -270,9 +278,17 @@ void MainWindow::buildUi()
     s->addWidget(progress); s->addWidget(status);
 
     auto *right = new QVBoxLayout;
+    auto *previewFrame = new QFrame;
+    previewFrame->setObjectName("previewFrame");
+    auto *previewLayout = new QVBoxLayout(previewFrame);
+    previewLayout->setContentsMargins(12,12,12,12);
+    previewLayout->setSpacing(8);
     auto *head = new QLabel("معاينة الطباعة");
     head->setObjectName("head");
-    right->addWidget(head);
+    auto *previewHint = new QLabel("المعاينة الكاملة — الأبعاد وخطوط القص مطابقة للطباعة");
+    previewHint->setObjectName("previewHint");
+    previewLayout->addWidget(head);
+    previewLayout->addWidget(previewHint);
     scene = new QGraphicsScene(this);
     view = new QGraphicsView(scene);
     view->setRenderHint(QPainter::Antialiasing);
@@ -280,10 +296,24 @@ void MainWindow::buildUi()
     view->setBackgroundBrush(QColor("#dfe6f0"));
     view->setFrameShape(QFrame::StyledPanel);
     view->setFrameShadow(QFrame::Sunken);
-    right->addWidget(view,1);
+    view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    view->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    previewLayout->addWidget(view,1);
+    right->addWidget(previewFrame,1);
+
+    auto *sideScroll = new QScrollArea;
+    sideScroll->setObjectName("sideScroll");
+    sideScroll->setWidget(side);
+    sideScroll->setWidgetResizable(true);
+    sideScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    sideScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    sideScroll->setFrameShape(QFrame::NoFrame);
+    sideScroll->setMinimumWidth(390);
+    sideScroll->setMaximumWidth(430);
 
     main->addLayout(right,1);
-    main->addWidget(side);
+    main->addWidget(sideScroll);
 
     auto changed = [this](){ updatePreview(); };
     connect(paper,&QComboBox::currentIndexChanged,this,changed);
@@ -318,10 +348,13 @@ void MainWindow::buildUi()
         QWidget{background:#eef2f7;color:#172033;font-family:"Segoe UI","Tahoma","Arial",sans-serif;font-size:14px;}
         QMainWindow{background:#eef2f7;}
         QFrame#side{background:#f9fbff;border:1px solid #b9c4d3;border-radius:16px;}
+        QScrollArea#sideScroll{background:transparent;}
+        QFrame#previewFrame{background:#ffffff;border:1px solid #aebdce;border-radius:14px;}
         QLabel#title{color:#172033;font-size:28px;font-weight:800;padding:4px 4px 0;}
         QLabel#sub{color:#526176;font-size:12px;font-weight:600;padding:0 4px 10px;}
         QLabel#listTitle{color:#172033;font-size:15px;font-weight:700;padding:6px 2px;}
         QLabel#head{color:#172033;font-size:22px;font-weight:700;padding:5px 0 8px;}
+        QLabel#previewHint{color:#607089;font-size:12px;font-weight:600;padding:0 2px 5px;}
         QLabel#status{background:#f8fafc;color:#172033;border:1px solid #c4cedd;border-radius:9px;padding:10px 12px;font-weight:700;}
         QLabel#layoutStatus{background:#edf5ff;color:#164b9b;border:1px solid #a9c8f5;border-radius:8px;padding:7px;font-weight:700;}
         QGroupBox{border:1px solid #c4cedd;border-radius:10px;margin-top:9px;padding:12px 10px 10px;font-weight:700;color:#26364f;}
