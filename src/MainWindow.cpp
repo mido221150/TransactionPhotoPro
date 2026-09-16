@@ -196,10 +196,10 @@ void MainWindow::buildUi()
     auto *form = new QFormLayout(paperGroup);
     paper = new QComboBox;
     paper->addItems({"A4","A5","10 × 15 سم","Letter","A3","13 × 18 سم"});
-    photoSizeLabel = new QLabel("4 × 6 سم");
+    photoSizeLabel = new QLabel("4 × 6 سم — 472 × 709 بكسل (300 DPI)");
     photoSizeLabel->setObjectName("fixedPhotoSize");
     photoSizeLabel->setAlignment(Qt::AlignCenter);
-    photoSizeLabel->setToolTip("مقاس الصور ثابت في هذا الإصدار");
+    photoSizeLabel->setToolTip("المقاس الرقمي الثابت: 472 × 709 بكسل بدقة 300 DPI");
     quality = new QComboBox;
     quality->addItems({"تحسين خفيف","تحسين متوسط","تحسين قوي"});
     removeBg = new QCheckBox("إزالة الخلفية البيضاء/الفاتحة");
@@ -713,7 +713,7 @@ void MainWindow::updatePreview()
 {
     const LayoutInfo layout=calculateLayout();
     const QString paperName=paper->currentText();
-    const QString sizeName="4 × 6 سم";
+    const QString sizeName="4 × 6 سم — 472 × 709 بكسل";
     const int totalSlots=layout.columns*layout.rows;
     const int repeats=photos.empty()?0:qMax(0,totalSlots-static_cast<int>(photos.size()));
     const QString orientation=layout.landscape?"أفقي":"رأسي";
@@ -790,7 +790,12 @@ void MainWindow::saveImages()
         QString safe=p.name;
         for(QChar c:QString("\\/:*?\"<>|")) safe.replace(c,'_');
         QString file=QDir(dir).filePath(safe+".png");
-        if(p.processed.save(file,"PNG")) ++n;
+        QImage output=p.processed.isNull()?p.original:p.processed;
+        output=output.scaled(472,709,Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
+        const int dotsPerMeter=qRound(300.0/0.0254);
+        output.setDotsPerMeterX(dotsPerMeter);
+        output.setDotsPerMeterY(dotsPerMeter);
+        if(output.save(file,"PNG")) ++n;
     }
     status->setText(QString("تم حفظ %1 صورة").arg(n));
 }
