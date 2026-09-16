@@ -630,14 +630,16 @@ void MainWindow::rebuildPage(QPainter *external,const QRectF &target)
     const int c=layout.columns, r=layout.rows;
     const double cw=automatic?pw:(ps.width()-2*m-(c-1)*g)/qMax(1,c);
     const double ch=automatic?ph:(ps.height()-2*m-(r-1)*g)/qMax(1,r);
-    int per=c*r;
-    for(int i=0;i<std::min(per,(int)photos.size());++i){
+    const int per=c*r;
+    const int slotCount=photos.empty()?0:per;
+    for(int i=0;i<slotCount;++i){
         int rr=i/c, cc=i%c;
         double x=ps.width()-m-(cc+1)*cw-cc*g; // RTL
         double y=m+rr*(ch+g);
         QRectF photoRect(x,y,cw,ch);
-        QImage im=photos[i].processed;
-        if(im.isNull()) im=photos[i].original;
+        const int photoIndex=i%static_cast<int>(photos.size());
+        QImage im=photos[photoIndex].processed;
+        if(im.isNull()) im=photos[photoIndex].original;
         QImage fit=im.scaled(photoRect.size().toSize(),Qt::KeepAspectRatio,Qt::SmoothTransformation);
         QRectF ir(photoRect.x()+(photoRect.width()-fit.width())/2,
                   photoRect.y()+(photoRect.height()-fit.height())/2,
@@ -656,7 +658,7 @@ void MainWindow::rebuildPage(QPainter *external,const QRectF &target)
             p.setFont(f); p.setPen(Qt::black);
             const QRectF labelRect=photoRect.adjusted(3,photoRect.height()-f.pixelSize()-8,-3,-3);
             p.fillRect(labelRect,QColor(255,255,255,205));
-            p.drawText(labelRect,Qt::AlignCenter|Qt::TextWordWrap,photos[i].name);
+            p.drawText(labelRect,Qt::AlignCenter|Qt::TextWordWrap,photos[photoIndex].name);
         }
     }
     p.end();
@@ -678,13 +680,23 @@ void MainWindow::updatePreview()
     const QString paperName=paper->currentText();
     const QString sizeName=photoSize->currentText();
     if(autoLayout->isChecked()){
+        const int totalSlots=layout.columns*layout.rows;
+        const int repeats=photos.empty()?0:qMax(0,totalSlots-static_cast<int>(photos.size()));
         layoutStatus->setText(QString("%1: %2 × %3 = %4 صور مقاس %5%6")
                               .arg(paperName).arg(layout.columns).arg(layout.rows)
                               .arg(layout.columns*layout.rows).arg(sizeName)
-                              .arg(layout.rotated?" (مدوّر)":""));
+                              .arg(layout.rotated?" (مدوّر)":"")
+                              + (repeats>0
+                                 ? QString(" — تكرار %1 نسخة لملء الورقة").arg(repeats)
+                                 : QString()));
     } else {
+        const int totalSlots=columns->value()*rows->value();
+        const int repeats=photos.empty()?0:qMax(0,totalSlots-static_cast<int>(photos.size()));
         layoutStatus->setText(QString("يدوي: %1 × %2 خلايا — المقاس الفعلي %3")
-                              .arg(columns->value()).arg(rows->value()).arg(sizeName));
+                              .arg(columns->value()).arg(rows->value()).arg(sizeName)
+                              + (repeats>0
+                                 ? QString(" — تكرار %1 نسخة لملء الورقة").arg(repeats)
+                                 : QString()));
     }
     rebuildPage();
 }
